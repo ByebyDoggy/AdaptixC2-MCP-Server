@@ -9,7 +9,8 @@ from __future__ import annotations
 from mcp.server.fastmcp import FastMCP
 
 from tools._context  import ToolContext
-from utils.validation import validate_agent_id, validate_agent_exists
+from client.adaptix_client import AdaptixAPIError
+from utils.validation import validate_agent_id, validate_agent_exists, validate_nonempty
 from utils.logging   import get_logger
 
 log = get_logger("tools.agents")
@@ -126,3 +127,131 @@ def register_agent_tools(mcp: FastMCP, ctx: ToolContext) -> None:
                 continue
 
         return "\n".join(lines)
+
+    # ── Listener management ─────────────────────────────────────────────────
+
+    @mcp.tool(description=(
+        "Start a new listener on the teamserver.\n"
+        "Args:\n"
+        "  name : STRING — Listener name (e.g. 'my-http').\n"
+        "  config_type : STRING — Listener type (e.g. 'beacon_http', 'beacon_dns', 'beacon_smb', 'beacon_tcp').\n"
+        "  config : STRING — JSON/YAML configuration string for the listener.\n"
+        "Example: create_listener('my-http', 'beacon_http', '{\"port\":8080,\"host\":\"0.0.0.0\"}')"
+    ))
+    async def create_listener(name: str, config_type: str, config: str) -> str:
+        name = validate_nonempty(name, "name")
+        config_type = validate_nonempty(config_type, "config_type")
+        config = validate_nonempty(config, "config")
+        log.info("tool.create_listener", name=name, type=config_type)
+        try:
+            await ctx.client.start_listener(name, config_type, config)
+            return f"Listener '{name}' ({config_type}) created successfully."
+        except AdaptixAPIError as e:
+            return f"Failed to create listener: {e}"
+
+    @mcp.tool(description=(
+        "Stop a running listener.\n"
+        "Use list_listeners first to find the name and type.\n"
+        "Args: name (STR), config_type (STR)."
+    ))
+    async def stop_listener(name: str, config_type: str) -> str:
+        name = validate_nonempty(name, "name")
+        config_type = validate_nonempty(config_type, "config_type")
+        log.info("tool.stop_listener", name=name, type=config_type)
+        try:
+            await ctx.client.stop_listener(name, config_type)
+            return f"Listener '{name}' stopped."
+        except AdaptixAPIError as e:
+            return f"Failed to stop listener: {e}"
+
+    @mcp.tool(description=(
+        "Pause a running listener temporarily.\n"
+        "Args: name (STR), config_type (STR)."
+    ))
+    async def pause_listener(name: str, config_type: str) -> str:
+        name = validate_nonempty(name, "name")
+        config_type = validate_nonempty(config_type, "config_type")
+        log.info("tool.pause_listener", name=name, type=config_type)
+        try:
+            await ctx.client.pause_listener(name, config_type)
+            return f"Listener '{name}' paused."
+        except AdaptixAPIError as e:
+            return f"Failed to pause listener: {e}"
+
+    @mcp.tool(description=(
+        "Resume a paused listener.\n"
+        "Args: name (STR), config_type (STR)."
+    ))
+    async def resume_listener(name: str, config_type: str) -> str:
+        name = validate_nonempty(name, "name")
+        config_type = validate_nonempty(config_type, "config_type")
+        log.info("tool.resume_listener", name=name, type=config_type)
+        try:
+            await ctx.client.resume_listener(name, config_type)
+            return f"Listener '{name}' resumed."
+        except AdaptixAPIError as e:
+            return f"Failed to resume listener: {e}"
+
+    @mcp.tool(description=(
+        "Edit an existing listener's configuration.\n"
+        "Args: name (STR), config_type (STR), config (STR) — new config JSON/YAML.\n"
+        "Example: edit_listener('my-http', 'beacon_http', '{\"port\":9090,\"host\":\"0.0.0.0\"}')"
+    ))
+    async def edit_listener(name: str, config_type: str, config: str) -> str:
+        name = validate_nonempty(name, "name")
+        config_type = validate_nonempty(config_type, "config_type")
+        config = validate_nonempty(config, "config")
+        log.info("tool.edit_listener", name=name, type=config_type)
+        try:
+            await ctx.client.edit_listener(name, config_type, config)
+            return f"Listener '{name}' configuration updated."
+        except AdaptixAPIError as e:
+            return f"Failed to edit listener: {e}"
+
+    # ── Agent generation ────────────────────────────────────────────────────
+
+    @mcp.tool(description=(
+        "Build an agent payload for deployment.\n"
+        "Args:\n"
+        "  listener_names : STR — Comma-separated listener names the agent should connect to.\n"
+        "  agent_name : STR — Agent type name (e.g. 'beacon', 'gopher').\n"
+        "  config : STR — JSON configuration string for the agent.\n"
+        "Returns the agent filename and base64-encoded binary content."
+    ))
+    async def generate_agent(listener_names: str, agent_name: str, config: str) -> str:
+        import base64
+        listeners = [l.strip() for l in listener_names.split(",") if l.strip()]
+        if not listeners:
+            return "Error: provide at least one listener name."
+        agent_name = validate_nonempty(agent_name, "agent_name")
+        config = validate_nonempty(config, "config")
+        log.info("tool.generate_agent", listeners=listeners, agent=agent_name)
+        try:
+            filename, content = await ctx.client.generate_agent(listeners, agent_name, config)
+            b64 = base64.b64encode(content).decode()
+            return (
+                f"Agent payload generated:\n"
+                f"  Filename: {filename}\n"
+                f"  Size: {len(content)} bytes\n"
+                f"  Type: {agent_name}\n"
+                f"  Listeners: {', '.join(listeners)}\n"
+                f"  Content (base64):\n{b64}"
+            )
+        except AdaptixAPIError as e:
+            return f"Failed to generate agent: {e}"
+
+    # ── Chat ────────────────────────────────────────────────────────────────
+
+    @mcp.tool(description=(
+        "Send a chat message visible in the AdaptixC2 teamserver console.\n"
+        "Useful for broadcasting messages to other operators.\n"
+        "Args: message (STR) — the chat text."
+    ))
+    async def send_chat(message: str) -> str:
+        message = validate_nonempty(message, "message")
+        log.info("tool.send_chat", message=message[:80])
+        try:
+            await ctx.client.send_chat(message)
+            return f"Chat message sent."
+        except AdaptixAPIError as e:
+            return f"Failed to send chat: {e}"

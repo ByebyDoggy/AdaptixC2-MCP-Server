@@ -22,6 +22,7 @@ import base64
 from mcp.server.fastmcp import FastMCP
 
 from tools._context import ToolContext
+from client.adaptix_client import AdaptixAPIError
 from services.task_service import TaskTimeoutError
 from utils.validation import validate_nonempty, resolve_agent_id
 from utils.logging import get_logger
@@ -270,3 +271,19 @@ def register_filesystem_tools(mcp: FastMCP, ctx: ToolContext) -> None:
             )
         except Exception as e:
             return f"Error syncing download: {e}"
+
+    @mcp.tool(description=(
+        "Delete previously downloaded files from the teamserver.\n"
+        "Args: file_ids (STR) — comma-separated list of file IDs.\n"
+        "Use list_downloads to see available files."
+    ))
+    async def delete_download(file_ids: str) -> str:
+        ids = [i.strip() for i in file_ids.split(",") if i.strip()]
+        if not ids:
+            return "Error: provide at least one file_id."
+        log.info("tool.delete_download", file_ids=ids)
+        try:
+            await ctx.client.delete_download(ids)
+            return f"{len(ids)} download(s) deleted."
+        except AdaptixAPIError as e:
+            return f"Failed to delete downloads: {e}"

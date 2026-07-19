@@ -175,3 +175,18 @@ def register_networking_tools(mcp: FastMCP, ctx: ToolContext) -> None:
             return f"Failed to stop tunnel: {e}"
         except Exception as e:
             return f"Error: {e}"
+
+    @mcp.tool(description=(
+        "Set or update the description/info for an active tunnel.\n"
+        "Use list_tunnels to find the tunnel ID.\n"
+        "Args: tunnel_id (STR), info (STR) — description text."
+    ))
+    async def set_tunnel_info(tunnel_id: str, info: str) -> str:
+        tunnel_id = validate_nonempty(tunnel_id, "tunnel_id")
+        info = validate_nonempty(info, "info")
+        log.info("tool.set_tunnel_info", tunnel_id=tunnel_id)
+        try:
+            await ctx.client.set_tunnel_info(tunnel_id, info)
+            return f"Tunnel '{tunnel_id}' info updated."
+        except AdaptixAPIError as e:
+            return f"Failed to set tunnel info: {e}"
