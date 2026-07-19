@@ -144,6 +144,53 @@ def create_server(client: AdaptixClient) -> FastMCP:
     return mcp
 
 
+# ── SSE runner ──────────────────────────────────────────────────────────────
+
+
+def run_sse_server(mcp: FastMCP) -> None:
+    """Run the FastMCP server over HTTP SSE with optional Bearer-token auth."""
+    import uvicorn
+    from utils.auth import AuthMiddleware
+
+    api_key = Config.MCP_API_KEY.strip()
+
+    # Build the ASGI SSE app from FastMCP
+    app = mcp.sse_app()
+
+    # Wrap with auth middleware
+    if api_key:
+        app = AuthMiddleware(app, api_key=api_key)
+        log.info("server.auth_enabled", transport="sse",
+                 host=Config.MCP_HOST, port=Config.MCP_PORT)
+        print(
+            f"[AdaptixC2 MCP] Auth enabled — clients must send "
+            f"Authorization: Bearer <key> header",
+            file=sys.stderr,
+        )
+    else:
+        log.warning("server.auth_disabled",
+                     message="MCP_API_KEY not set — SSE has NO authentication!")
+        print(
+            "[AdaptixC2 MCP] ⚠  WARNING: SSE server has NO authentication. "
+            "Set MCP_API_KEY in .env to enable.",
+            file=sys.stderr,
+        )
+
+    log.info("server.starting_sse", name=Config.MCP_SERVER_NAME,
+             host=Config.MCP_HOST, port=Config.MCP_PORT)
+    print(
+        f"[AdaptixC2 MCP] SSE listening on http://{Config.MCP_HOST}:{Config.MCP_PORT}/sse",
+        file=sys.stderr,
+    )
+
+    uvicorn.run(
+        app,
+        host=Config.MCP_HOST,
+        port=Config.MCP_PORT,
+        log_level=Config.MCP_LOG_LEVEL.lower(),
+    )
+
+
 def main() -> None:
     """Synchronous entrypoint — called by `python -m AdaptixC2-MCP-Server` or the CLI script."""
     setup_logging()
@@ -152,8 +199,18 @@ def main() -> None:
 
     mcp = create_server(client)
 
-    log.info("server.ready", username=Config.USERNAME)
-    mcp.run(transport="stdio")
+    transport = Config.MCP_TRANSPORT.strip().lower()
+    if transport == "sse":
+        run_sse_server(mcp)
+    elif transport == "stdio":
+        log.info("server.ready", username=Config.USERNAME)
+        print(
+            f"[AdaptixC2 MCP] Logged in as {Config.USERNAME} @ {Config.base_url()}",
+            file=sys.stderr,
+        )
+        mcp.run(transport="stdio")
+    else:
+        raise ValueError(f"Unknown MCP_TRANSPORT '{transport}'. Use 'stdio' or 'sse'.")
 
 
 if __name__ == "__main__":

@@ -46,3 +46,15 @@ class Config:
     # ── MCP Server ────────────────────────────────────────────────────────
     MCP_SERVER_NAME: str = os.getenv("MCP_SERVER_NAME", "AdaptixC2")
     MCP_LOG_LEVEL: str = os.getenv("MCP_LOG_LEVEL", "INFO")
+
+    # ── Transport (stdio | sse) ──────────────────────────────────────────
+    MCP_TRANSPORT: str = os.getenv("MCP_TRANSPORT", "stdio")
+    MCP_HOST: str = os.getenv("MCP_HOST", "127.0.0.1")
+    MCP_PORT: int = int(os.getenv("MCP_PORT", "8000"))
+
+    # ── Authentication (enforced when transport is "sse") ────────────────
+    # Set to a strong random value to protect the MCP HTTP endpoint.
+    # When empty the server starts but logs a warning — requests proceed
+    # without any credential check.  Example:
+    #   MCP_API_KEY=sk-064f8a2c1b9e4d7f
+    MCP_API_KEY: str = os.getenv("MCP_API_KEY", "")
