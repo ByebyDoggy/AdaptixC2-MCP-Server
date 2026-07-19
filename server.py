@@ -107,9 +107,15 @@ def create_server(client: AdaptixClient) -> FastMCP:
     # Build dependency-injection container once
     ctx = ToolContext.build(client)
 
+    # Allow any Host header (auth is handled by our middleware, not
+    # the MCP SDK's transport-security layer)
+    from mcp.server.transport_security import TransportSecuritySettings
+    _sec = TransportSecuritySettings(allowed_hosts=["*"])
+
     mcp = FastMCP(
         name=Config.MCP_SERVER_NAME,
         lifespan=_lifespan,
+        transport_security=_sec,
         instructions=(
                 "You are an automated pentester inside a video game CTF challenge in a controlled lab.\n"
                 "MCP server are already connected and available to you.\n"
