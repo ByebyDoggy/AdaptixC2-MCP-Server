@@ -214,26 +214,87 @@ def register_agent_tools(mcp: FastMCP, ctx: ToolContext) -> None:
         "Build an agent payload for deployment.\n"
         "Args:\n"
         "  listener_names : STR — Comma-separated listener names the agent should connect to.\n"
-        "  agent_name : STR — Agent type name (e.g. 'beacon', 'gopher').\n"
-        "  config : STR — JSON configuration string for the agent.\n"
+        "  agent_name : STR — Agent type: 'beacon' (Windows C, Exe/DLL/Shellcode) or 'gopher' (cross-platform Go).\n"
+        "  os : STR — Target OS. For 'beacon': always 'windows'. For 'gopher': 'windows', 'linux', or 'macos'.\n"
+        "  arch : STR — 'x64' (default) or 'x86' (beacon only, ignored for gopher), 'arm64' (gopher only).\n"
+        "  format : STR — Output format (beacon only): 'Exe' (default), 'Service Exe', 'DLL', 'Shellcode'.\n"
+        "  sleep : STR — Beacon sleep interval, e.g. '60' (seconds) or '1m30s' (default: '60').\n"
+        "  jitter : INT — Beacon jitter percentage 0-100 (default: 0).\n"
+        "  extra_config : STR (optional) — Additional JSON keys merged into config, e.g. "
+        "'{\"user_agent\":\"...\",\"proxy_host\":\"...\"}'.\n"
+        "\n"
+        "Agent types:\n"
+        "  beacon  → Windows only (x86/x64, compiled C via MinGW)\n"
+        "           Formats: Exe (.exe), Service Exe (svc_*.exe), DLL (.dll), Shellcode (.bin)\n"
+        "  gopher  → Cross-platform (Go, amd64/arm64)\n"
+        "           OS: windows (.exe), linux (.bin), macos (.bin)\n"
+        "\n"
         "Returns the agent filename and base64-encoded binary content."
     ))
-    async def generate_agent(listener_names: str, agent_name: str, config: str) -> str:
-        import base64
+    async def generate_agent(
+        listener_names: str,
+        agent_name: str,
+        os: str = "windows",
+        arch: str = "x64",
+        format: str = "Exe",
+        sleep: str = "60",
+        jitter: int = 0,
+        extra_config: str = "",
+    ) -> str:
+        import base64, json
+
+        # Parse listener list
         listeners = [l.strip() for l in listener_names.split(",") if l.strip()]
         if not listeners:
             return "Error: provide at least one listener name."
-        agent_name = validate_nonempty(agent_name, "agent_name")
-        config = validate_nonempty(config, "config")
-        log.info("tool.generate_agent", listeners=listeners, agent=agent_name)
+        agent_name = validate_nonempty(agent_name, "agent_name").lower()
+
+        # Validate OS / arch / format per agent type
+        if agent_name == "beacon":
+            if os != "windows":
+                return "Error: beacon agent supports only 'windows' OS."
+            if arch not in ("x86", "x64"):
+                return "Error: beacon arch must be 'x86' or 'x64'."
+            if format not in ("Exe", "Service Exe", "DLL", "Shellcode"):
+                return "Error: beacon format must be 'Exe', 'Service Exe', 'DLL', or 'Shellcode'."
+        elif agent_name == "gopher":
+            if os not in ("windows", "linux", "macos"):
+                return "Error: gopher OS must be 'windows', 'linux', or 'macos'."
+            if arch not in ("amd64", "arm64"):
+                return "Error: gopher arch must be 'amd64' or 'arm64'."
+
+        # Build config JSON
+        config_dict = {
+            "os": os,
+            "arch": arch,
+        }
+        if agent_name == "beacon":
+            config_dict["format"] = format
+            config_dict["sleep"] = str(sleep)
+            config_dict["jitter"] = jitter
+        elif agent_name == "gopher":
+            config_dict["reconn_timeout"] = "60s"
+            config_dict["reconn_count"] = 9999
+
+        # Merge extra config JSON if provided
+        if extra_config:
+            try:
+                extra = json.loads(extra_config)
+                config_dict.update(extra)
+            except json.JSONDecodeError as e:
+                return f"Error: invalid extra_config JSON — {e}"
+
+        config_json = json.dumps(config_dict)
+
+        log.info("tool.generate_agent", listeners=listeners, agent=agent_name, config=config_json)
         try:
-            filename, content = await ctx.client.generate_agent(listeners, agent_name, config)
+            filename, content = await ctx.client.generate_agent(listeners, agent_name, config_json)
             b64 = base64.b64encode(content).decode()
             return (
                 f"Agent payload generated:\n"
                 f"  Filename: {filename}\n"
                 f"  Size: {len(content)} bytes\n"
-                f"  Type: {agent_name}\n"
+                f"  Type: {agent_name} ({os}/{arch})\n"
                 f"  Listeners: {', '.join(listeners)}\n"
                 f"  Content (base64):\n{b64}"
             )
