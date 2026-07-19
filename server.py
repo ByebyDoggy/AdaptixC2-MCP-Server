@@ -188,6 +188,7 @@ def run_sse_server(mcp: FastMCP) -> None:
         host=Config.MCP_HOST,
         port=Config.MCP_PORT,
         log_level=Config.MCP_LOG_LEVEL.lower(),
+        proxy_headers=False,
     )
 
 
