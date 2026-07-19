@@ -107,10 +107,11 @@ def create_server(client: AdaptixClient) -> FastMCP:
     # Build dependency-injection container once
     ctx = ToolContext.build(client)
 
-    # Allow any Host header (auth is handled by our middleware, not
-    # the MCP SDK's transport-security layer)
+    # Disable DNS-rebinding host-check (auth is handled by our middleware,
+    # not the MCP SDK's transport-security layer — and the SDK's host validator
+    # doesn't support a catch-all wildcard).  See _validate_host() in the SDK.
     from mcp.server.transport_security import TransportSecuritySettings
-    _sec = TransportSecuritySettings(allowed_hosts=["*"])
+    _sec = TransportSecuritySettings(enable_dns_rebinding_protection=False)
 
     mcp = FastMCP(
         name=Config.MCP_SERVER_NAME,
