@@ -214,31 +214,44 @@ def register_agent_tools(mcp: FastMCP, ctx: ToolContext) -> None:
         "Build an agent payload for deployment.\n"
         "Args:\n"
         "  listener_names : STR — Comma-separated listener names the agent should connect to.\n"
-        "  agent_name : STR — Agent type: 'beacon' (Windows C, Exe/DLL/Shellcode) or 'gopher' (cross-platform Go).\n"
-        "  os : STR — Target OS. For 'beacon': always 'windows'. For 'gopher': 'windows', 'linux', or 'macos'.\n"
-        "  arch : STR — 'x64' (default) or 'x86' (beacon only, ignored for gopher), 'arm64' (gopher only).\n"
-        "  format : STR — Output format (beacon only): 'Exe' (default), 'Service Exe', 'DLL', 'Shellcode'.\n"
-        "  sleep : STR — Beacon sleep interval, e.g. '60' (seconds) or '1m30s' (default: '60').\n"
-        "  jitter : INT — Beacon jitter percentage 0-100 (default: 0).\n"
-        "  extra_config : STR (optional) — Additional JSON keys merged into config, e.g. "
-        "'{\"user_agent\":\"...\",\"proxy_host\":\"...\"}'.\n"
+        "  agent_name : STR — 'beacon' (Windows C) or 'gopher' (cross-platform Go).\n"
+        "  os : STR — Target OS.\n"
+        "         beacon: 'windows' (only choice).\n"
+        "         gopher: 'windows' | 'linux' | 'macos'.\n"
+        "  arch : STR — CPU architecture.\n"
+        "         beacon: 'x64' | 'x86'.\n"
+        "         gopher: 'amd64' | 'arm64'.\n"
+        "  format : STR — Output format (beacon only).\n"
+        "         'Exe' | 'Service Exe' | 'DLL' | 'Shellcode'.\n"
+        "  sleep : STR — Agent heartbeat interval, e.g. '60' (seconds).\n"
+        "  jitter : INT — Jitter percentage (0-100).\n"
+        "  iat_hiding : BOOL — (beacon) Enable IAT hiding for Defender evasion (default: false).\n"
+        "  user_agent : STR — (beacon) Custom HTTP User-Agent header.\n"
+        "  rotation_mode : STR — (beacon) Callback rotation: 'sequential' | 'random' (default: 'random').\n"
+        "  extra_config : STR — (optional) Extra JSON keys, e.g. "
+        "'{\"proxy_host\":\"10.0.0.1\",\"proxy_port\":8080}'.\n"
         "\n"
         "Agent types:\n"
         "  beacon  → Windows only (x86/x64, compiled C via MinGW)\n"
         "           Formats: Exe (.exe), Service Exe (svc_*.exe), DLL (.dll), Shellcode (.bin)\n"
-        "  gopher  → Cross-platform (Go, amd64/arm64)\n"
-        "           OS: windows (.exe), linux (.bin), macos (.bin)\n"
+        "  gopher  → Cross-platform Go (windows/linux/macos, amd64/arm64)\n"
+        "\n"
+        "Example: generate_agent(listener_names='C2HTTP', agent_name='beacon', os='windows', arch='x64', format='Exe', iat_hiding=True)\n"
+        "Example: generate_agent(listener_names='GopherTCP', agent_name='gopher', os='linux', arch='amd64')\n"
         "\n"
         "Returns the agent filename and base64-encoded binary content."
     ))
     async def generate_agent(
         listener_names: str,
         agent_name: str,
-        os: str = "windows",
-        arch: str = "x64",
-        format: str = "Exe",
-        sleep: str = "60",
+        os: str = "",
+        arch: str = "",
+        format: str = "",
+        sleep: str = "",
         jitter: int = 0,
+        iat_hiding: bool = False,
+        user_agent: str = "",
+        rotation_mode: str = "",
         extra_config: str = "",
     ) -> str:
         import base64, json
@@ -249,8 +262,13 @@ def register_agent_tools(mcp: FastMCP, ctx: ToolContext) -> None:
             return "Error: provide at least one listener name."
         agent_name = validate_nonempty(agent_name, "agent_name").lower()
 
-        # Validate OS / arch / format per agent type
+        # Agent-type-specific defaults and validation
         if agent_name == "beacon":
+            if not os: os = "windows"
+            if not arch: arch = "x64"
+            if not format: format = "Exe"
+            if not sleep: sleep = "60"
+            if not rotation_mode: rotation_mode = "random"
             if os != "windows":
                 return "Error: beacon agent supports only 'windows' OS."
             if arch not in ("x86", "x64"):
@@ -258,20 +276,24 @@ def register_agent_tools(mcp: FastMCP, ctx: ToolContext) -> None:
             if format not in ("Exe", "Service Exe", "DLL", "Shellcode"):
                 return "Error: beacon format must be 'Exe', 'Service Exe', 'DLL', or 'Shellcode'."
         elif agent_name == "gopher":
+            if not os: os = "linux"
+            if not arch: arch = "amd64"
             if os not in ("windows", "linux", "macos"):
                 return "Error: gopher OS must be 'windows', 'linux', or 'macos'."
             if arch not in ("amd64", "arm64"):
                 return "Error: gopher arch must be 'amd64' or 'arm64'."
 
         # Build config JSON
-        config_dict = {
-            "os": os,
-            "arch": arch,
-        }
+        config_dict = {"os": os, "arch": arch}
         if agent_name == "beacon":
             config_dict["format"] = format
             config_dict["sleep"] = str(sleep)
             config_dict["jitter"] = jitter
+            config_dict["iat_hiding"] = iat_hiding
+            if user_agent:
+                config_dict["user_agent"] = user_agent
+            if rotation_mode:
+                config_dict["rotation_mode"] = rotation_mode
         elif agent_name == "gopher":
             config_dict["reconn_timeout"] = "60s"
             config_dict["reconn_count"] = 9999
