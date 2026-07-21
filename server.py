@@ -59,8 +59,6 @@ client = AdaptixClient()
 @asynccontextmanager
 async def _lifespan(server: FastMCP):
     """FastMCP lifespan: authenticate on startup, clean up on shutdown."""
-    import asyncio
-    ws_task: asyncio.Task | None = None
     try:
         await client.start()
         log.info("server.logged_in", username=Config.USERNAME)
@@ -68,11 +66,6 @@ async def _lifespan(server: FastMCP):
             f"[AdaptixC2 MCP] Logged in as {Config.USERNAME} @ {Config.base_url()}",
             file=sys.stderr,
         )
-        
-        # Open persistent WebSocket /connect so this MCP operator
-        # appears online in the AdaptixC2 GUI.
-        ws_task = asyncio.create_task(client.ws_connect_operator())
-        
     except Exception as e:
         print(f"[AdaptixC2 MCP] Login failed: {e}", file=sys.stderr)
         log.error("server.login_failed", error=str(e))
@@ -80,8 +73,6 @@ async def _lifespan(server: FastMCP):
     try:
         yield
     finally:
-        if ws_task:
-            ws_task.cancel()
         try:
             await client.close()
         except Exception:

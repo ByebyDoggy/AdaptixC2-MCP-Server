@@ -254,24 +254,6 @@ def register_agent_tools(mcp: FastMCP, ctx: ToolContext) -> None:
         rotation_mode: str = "",
         extra_config: str = "",
     ) -> str:
-        """Generate a C2 agent payload for deployment.
-
-        Args:
-            listener_names: Comma-separated listener names the agent connects to (e.g. "C2HTTP" or "GopherTCP")
-            agent_name: Agent type - "beacon" (Windows native C) or "gopher" (cross-platform Go)
-            os: Target OS - beacon: "windows"; gopher: "windows" | "linux" | "macos"
-            arch: CPU architecture - beacon: "x64" | "x86"; gopher: "amd64" | "arm64"
-            format: Output format (beacon only) - "Exe" | "Service Exe" | "DLL" | "Shellcode"
-            sleep: Agent heartbeat interval in seconds (e.g. "60")
-            jitter: Heartbeat jitter percentage 0-100
-            iat_hiding: Enable IAT hiding for Windows Defender evasion (beacon only)
-            user_agent: Custom HTTP User-Agent header (beacon only)
-            rotation_mode: Callback rotation strategy - "sequential" | "random" (beacon only)
-            extra_config: Extra JSON config for advanced options, merged into the config dict
-
-        Returns:
-            Agent filename and base64-encoded binary content
-        """
         import base64, json
 
         # Parse listener list
