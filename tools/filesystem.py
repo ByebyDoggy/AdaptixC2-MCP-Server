@@ -238,7 +238,8 @@ def register_filesystem_tools(mcp: FastMCP, ctx: ToolContext) -> None:
             "List all files that have been downloaded from agents to the teamserver."
         )
     )
-    async def list_downloads() -> str:
+    async def list_downloads(verbose: bool = False) -> str:
+        """verbose: unused (workaround for zero-param issue)."""
         downloads = await ctx.client.list_downloads_raw()
         if not downloads:
             return "No downloads available."

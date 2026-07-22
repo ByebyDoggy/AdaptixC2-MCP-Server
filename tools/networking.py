@@ -19,7 +19,8 @@ def register_networking_tools(mcp: FastMCP, ctx: ToolContext) -> None:
     """Register all networking/tunnel MCP tools."""
 
     @mcp.tool(description="List all active tunnels (SOCKS proxies, port forwards) on the teamserver.")
-    async def list_tunnels() -> str:
+    async def list_tunnels(verbose: bool = False) -> str:
+        """verbose: unused (workaround for zero-param issue)."""
         tunnels = await ctx.client.list_tunnels_raw()
         if not tunnels:
             return "No active tunnels."

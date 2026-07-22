@@ -75,6 +75,16 @@ class AdaptixClient:
         await self.login()
         self._started = True
 
+    async def start_client_only(self) -> None:
+        """Create the httpx client without authenticating (lazy auth)."""
+        if self._client is not None:
+            return
+        self._client = httpx.AsyncClient(
+            base_url=self._base_url,
+            verify=Config.VERIFY_SSL,
+            timeout=60.0,
+        )
+
     async def _ensure_started(self) -> None:
         """Lazily start and authenticate if not yet done."""
         if not self._started:

@@ -32,5 +32,6 @@ def register_reporting_tools(mcp: FastMCP, ctx: ToolContext) -> None:
         return f"Writeup '{title}' saved to {ctx.report_svc.filepath}."
 
     @mcp.tool(description="Read all saved notes and findings for this session.")
-    async def view_session_notes() -> str:
+    async def view_session_notes(verbose: bool = False) -> str:
+        """verbose: unused (workaround for zero-param issue)."""
         return ctx.report_svc.read_notes()

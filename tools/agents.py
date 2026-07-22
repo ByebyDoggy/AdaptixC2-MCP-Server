@@ -6,6 +6,10 @@ and for querying teamserver listeners.
 """
 from __future__ import annotations
 
+import os
+import sys
+import time as _time
+
 from mcp.server.fastmcp import FastMCP
 
 from tools._context  import ToolContext
@@ -15,15 +19,24 @@ from utils.logging   import get_logger
 
 log = get_logger("tools.agents")
 
+# Global diagnostics reference (set by server.py at startup)
+_mcp_server_ref: FastMCP | None = None
+
+def set_mcp_server_ref(srv: FastMCP) -> None:
+    global _mcp_server_ref
+    _mcp_server_ref = srv
+
 
 def register_agent_tools(mcp: FastMCP, ctx: ToolContext) -> None:
     """Register agent management MCP tools."""
+    _time_started = _time.time()
 
     @mcp.tool(description=(
         "List all active agents connected to the AdaptixC2 teamserver.\n"
         "Returns: OS, hostname, username, IP, process, sleep interval, elevation status."
     ))
-    async def list_agents() -> str:
+    async def list_agents(verbose: bool = False) -> str:
+        """verbose: unused (required to work around client param validation)."""
         agents = await ctx.agent_svc.list_agents()
         if not agents:
             return "No agents currently connected."
@@ -82,7 +95,8 @@ def register_agent_tools(mcp: FastMCP, ctx: ToolContext) -> None:
         return f"Tag '{tag}' applied to agents: {', '.join(ids)}"
 
     @mcp.tool(description="List all active listeners on the teamserver.")
-    async def list_listeners() -> str:
+    async def list_listeners(verbose: bool = False) -> str:
+        """verbose: unused (workaround for zero-param issue)."""
         listeners = await ctx.client.list_listeners_raw()
         if not listeners:
             return "No listeners currently active."
@@ -364,3 +378,44 @@ def register_agent_tools(mcp: FastMCP, ctx: ToolContext) -> None:
             return f"Chat message sent."
         except AdaptixAPIError as e:
             return f"Failed to send chat: {e}"
+
+    # ── Diagnostics ────────────────────────────────────────────────────────────
+
+    @mcp.tool(description=(
+        "MCP server diagnostics — shows internal server state, tool count, "
+        "C2 connectivity, and uptime. Use this when tools fail with unexpected "
+        "errors to help diagnose the root cause."
+    ))
+    async def mcp_diagnostic(full: bool = False) -> str:
+        """full: unused (required to work around client param validation)."""
+        lines = [
+            "=== MCP Server Diagnostics ===",
+            f"Server:      {mcp.name}",
+            f"Uptime:      {int(_time.time() - _time_started)} seconds",
+            f"C2 URL:      {ctx.client._base_url}",
+            f"C2 user:     {ctx.client._username}",
+            f"C2 started:  {getattr(ctx.client, '_started', False)}",
+        ]
+        # Tool count
+        try:
+            tl = mcp._tool_manager.list_tools() if hasattr(mcp, "_tool_manager") else []
+            lines.append(f"Tools:       {len(tl)} registered")
+        except Exception as e:
+            lines.append(f"Tools:       ERROR reading — {e}")
+        # Python env
+        lines.append(f"Python:      {sys.version.split()[0]}")
+        lines.append(f"PID:         {os.getpid()}")
+        lines.append(f"CWD:         {os.getcwd()}")
+        # Agent count
+        try:
+            agents = await ctx.agent_svc.list_agents()
+            lines.append(f"Agents:      {len(agents)} connected")
+        except Exception as e:
+            lines.append(f"Agents:      ERROR — {e}")
+        # Listeners
+        try:
+            listeners = await ctx.client.list_listeners_raw()
+            lines.append(f"Listeners:   {len(listeners)} active")
+        except Exception as e:
+            lines.append(f"Listeners:   ERROR — {e}")
+        return "\n".join(lines)

@@ -25,9 +25,12 @@ logging.basicConfig(
     force=True,
 )
 for _noisy in ("httpx", "httpcore", "uvicorn", "uvicorn.access",
-               "uvicorn.error", "asyncio", "anyio", "mcp", "websockets"):
+               "uvicorn.error", "asyncio", "anyio", "websockets"):
     logging.getLogger(_noisy).setLevel(logging.ERROR)
     logging.getLogger(_noisy).propagate = False
+# Keep "mcp" logger at WARNING so initialization errors are visible in logs
+logging.getLogger("mcp").setLevel(logging.WARNING)
+logging.getLogger("mcp").propagate = False
 
 # Redirect stray print() calls to stderr (defensive)
 _real_print = print
@@ -48,6 +51,7 @@ from mcp.server.fastmcp import FastMCP
 from config              import Config
 from utils.logging       import setup_logging, get_logger
 from client.adaptix_client import AdaptixClient
+from starlette.applications import Starlette
 
 log = get_logger("server")
 
@@ -58,17 +62,12 @@ client = AdaptixClient()
 
 @asynccontextmanager
 async def _lifespan(server: FastMCP):
-    """FastMCP lifespan: authenticate on startup, clean up on shutdown."""
+    """FastMCP lifespan: init httpx client lazily, clean up on shutdown."""
     try:
-        await client.start()
-        log.info("server.logged_in", username=Config.USERNAME)
-        print(
-            f"[AdaptixC2 MCP] Logged in as {Config.USERNAME} @ {Config.base_url()}",
-            file=sys.stderr,
-        )
+        await client.start_client_only()
+        log.info("server.client_ready")
     except Exception as e:
-        print(f"[AdaptixC2 MCP] Login failed: {e}", file=sys.stderr)
-        log.error("server.login_failed", error=str(e))
+        log.error("server.client_init_failed", error=str(e))
 
     try:
         yield
@@ -142,7 +141,44 @@ def create_server(client: AdaptixClient) -> FastMCP:
     return mcp
 
 
+# ── SNTP time ─────────────────────────────────────────────────────────────────
+
+import time as _time
+_server_start = _time.time()
+
+
 # ── SSE runner ──────────────────────────────────────────────────────────────
+
+
+def _make_health_app(mcp: FastMCP) -> Starlette:
+    """Build an ASGI app with both MCP SSE routes plus a /health endpoint."""
+    from starlette.responses import JSONResponse
+    from starlette.routing import Mount, Route
+
+    sse_app = mcp.sse_app()
+
+    async def health_endpoint(request):
+        tool_count = 0
+        try:
+            if hasattr(mcp, "_tool_manager"):
+                tool_count = len(mcp._tool_manager.list_tools())
+        except Exception:
+            pass
+        return JSONResponse({
+            "status": "ok",
+            "server": Config.MCP_SERVER_NAME,
+            "uptime_seconds": int(_time.time() - _server_start),
+            "tools_registered": tool_count,
+            "c2_connected": getattr(client, "_started", False),
+            "c2_user": Config.USERNAME,
+            "c2_url": Config.base_url(),
+        })
+
+    routes = [
+        Route("/health", endpoint=health_endpoint, methods=["GET"]),
+        Mount("/", app=sse_app),
+    ]
+    return Starlette(routes=routes)
 
 
 def run_sse_server(mcp: FastMCP) -> None:
@@ -152,14 +188,16 @@ def run_sse_server(mcp: FastMCP) -> None:
 
     api_key = Config.MCP_API_KEY.strip()
 
-    # Build the ASGI SSE app from FastMCP
-    app = mcp.sse_app()
+    # Build combined app with health endpoint
+    app = _make_health_app(mcp)
 
-    # Wrap with auth middleware
+    # Wrap with auth middleware (health endpoint bypasses auth internally)
     if api_key:
         app = AuthMiddleware(app, api_key=api_key)
         log.info("server.auth_enabled", transport="sse",
                  host=Config.MCP_HOST, port=Config.MCP_PORT)
+        log.info("server.health_endpoint",
+                 path=f"http://{Config.MCP_HOST}:{Config.MCP_PORT}/health")
         print(
             f"[AdaptixC2 MCP] Auth enabled — clients must send "
             f"Authorization: Bearer <key> header",
@@ -178,6 +216,10 @@ def run_sse_server(mcp: FastMCP) -> None:
              host=Config.MCP_HOST, port=Config.MCP_PORT)
     print(
         f"[AdaptixC2 MCP] SSE listening on http://{Config.MCP_HOST}:{Config.MCP_PORT}/sse",
+        file=sys.stderr,
+    )
+    print(
+        f"[AdaptixC2 MCP] Health: http://{Config.MCP_HOST}:{Config.MCP_PORT}/health",
         file=sys.stderr,
     )
 

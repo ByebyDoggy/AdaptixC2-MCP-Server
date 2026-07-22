@@ -79,7 +79,8 @@ def register_recon_tools(mcp: FastMCP, ctx: ToolContext) -> None:
         return await exec_cmd(ctx, agent_id, f"ps run{flags} {args}", data, log_name="ps.run")
 
     @mcp.tool(description="List all credentials harvested across all agents.")
-    async def list_credentials() -> str:
+    async def list_credentials(verbose: bool = False) -> str:
+        """verbose: unused (workaround for zero-param issue)."""
         creds = await ctx.client.list_creds_raw()
         if not creds:
             return "No credentials stored."
@@ -93,7 +94,8 @@ def register_recon_tools(mcp: FastMCP, ctx: ToolContext) -> None:
         return "\n".join(lines)
 
     @mcp.tool(description="List all known targets/hosts in the teamserver database.")
-    async def list_targets() -> str:
+    async def list_targets(verbose: bool = False) -> str:
+        """verbose: unused (workaround for zero-param issue)."""
         targets = await ctx.client.list_targets_raw()
         if not targets:
             return "No targets stored."
@@ -111,7 +113,8 @@ def register_recon_tools(mcp: FastMCP, ctx: ToolContext) -> None:
     # ── Screenshots ─────────────────────────────────────────────────────────
 
     @mcp.tool(description="List all screenshots captured from agents.")
-    async def list_screenshots() -> str:
+    async def list_screenshots(verbose: bool = False) -> str:
+        """verbose: unused (workaround for zero-param issue)."""
         screenshots = await ctx.client.list_screenshots_raw()
         if not screenshots:
             return "No screenshots available."
